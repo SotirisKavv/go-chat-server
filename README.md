@@ -1,111 +1,152 @@
-# 💬 Real-Time Go Chat Server 🚀
+# Real‑Time Go Chat Server — Event‑Driven WebSocket Rooms
 
-Welcome to the **Real-Time Go Chat Server**, a high-performance, full-stack WebSocket chat application built in Go. Whether you're a recruiter, fellow developer, or curious hacker, this README will give you a whirlwind tour of what this project does, how it works, and why it’s a stellar example of modern Go engineering.
+High‑performance, multi‑room WebSocket chat server in Go. Shows off clean concurrency with goroutines/channels, a repository‑backed storage layer (Postgres or in‑memory), and a tiny query builder for safe SQL.
 
----
+- Endpoints: WebSocket for chat + HTTP for message history and static client
+- Messaging: Broadcast per room via a central Hub
+- Persistence: PostgreSQL (via pgx) with in‑memory fallback
+- Concurrency: Fan‑out/fan‑in workers for async persistence
 
-## 🤔 What Is This?
-A lightning-fast, multi-room chat server that handles thousands of concurrent users with ease. Powered by:
+Quick links:
+- Client: `client.html`
+- WebSocket handler: `server/websocket.go`
+- Hub and rooms: `chat/hub.go`, `chat/room.go`, `chat/client.go`
+- Storage: `storage/pgsql_repository.go`, `storage/memory_repo.go`
 
-- **WebSockets** for instant bidirectional messaging
-- **PostgreSQL** persistence (with in-memory fallback)
-- A **custom Query Builder** for safe, parameterized SQL
-- **Goroutines & Channels** for supercharged concurrency
 
-Think Slack meets Go—only lighter, faster, and 100% open source.
+## What this project showcases
 
----
+- Lightweight, idiomatic concurrency with goroutines and channels
+- Repository pattern to abstract storage (Postgres or memory)
+- Parameterized SQL with a minimal Query Builder (`utils/query_builder.go`)
+- Clean WebSocket handling and room fan‑out
+- Simple, explicit error handling and resource cleanup
 
-## 🏗️ Architecture Overview
+
+## High‑level architecture
+
+Components:
+- Client (HTML/JS): Connects via WebSocket to join/send messages
+- Router + WebSocket handler: Upgrades connection and attaches to a room
+- Hub: Central coordinator for rooms and broadcasts
+- Workers: Async persistence of messages to storage
+- Storage: PostgreSQL (pgx) or in‑memory repository
+
+Diagram:
 
 ```text
 Client Browser  ↔  WebSocket Handler  ↔  Hub & Workers  ↔  Storage Layer
-                                             m
-                                    +-------- In-Memory --------+
+                                    +-------- In‑Memory --------+
                                     |                           |
-                               PostgreSQL                 Message Queue
+                               PostgreSQL                 (optional MQ)
 ```
 
-1. **Client**: HTML/JS front-end connects via `ws://localhost:8080/chat`.
-2. **Router & Handler**: `gorilla/mux` routes HTTP & WebSocket endpoints.
-3. **Hub**: Central goroutine manages rooms and broadcasts messages.
-4. **Workers**: Dedicated goroutines save messages to storage asynchronously.
-5. **Storage**:
-   - **PostgreSQL** via `pgx` with auto-schema creation
-   - **In-Memory** fallback store for ultra-low-latency reads
-6. **Repository Pattern** abstracts storage details and injects the proper layer.
 
----
+## How it works (chat flow)
 
-## ✨ Go Features & Patterns Used
+1) Client connects to `ws://localhost:8080/chat?r=<room>&u=<user>`
+- Server upgrades to WebSocket and registers the client in a room
 
-- **Concurrency**: Lightweight goroutines & channel fan-out/fan-in patterns
-- **Design Patterns**:
-  - **Repository** for data access abstractions
-  - **Singleton** for a single Hub instance
-  - **Observer** for subscription/event handling in rooms
-  - **Builder** for SQL query construction (`utils/QueryBuilder`)
-- **Error Handling**: Idiomatic Go error checks, `defer` cleanup
-- **Environment Config**: `godotenv` for local `.env` support
-- **Module Management**: Go Modules (`go.mod`, `go.sum`)
+2) Hub broadcasts messages per room
+- Incoming messages are fanned out to all clients in the same room
 
----
+3) Workers persist asynchronously
+- Messages are queued to a worker pool to write to the configured repository
 
-## 🚀 Getting Started
+4) History API serves past messages
+- `GET /history?r=<room>` returns recent messages for the room
 
-### Prerequisites
 
-- Go 1.23+
-- PostgreSQL (if you want persistence) or none (in-memory only)
-- `make` or your preferred task runner (optional)
+## Design patterns and tactics
 
-### Quick Start
+- Repository abstraction for data access (`storage/*`)
+- Singleton‑like Hub instance coordinating rooms and clients
+- Observer‑style subscriptions for room broadcasts
+- Builder pattern for composing SQL queries (`utils/query_builder.go`)
+- Defensive error handling with `defer` cleanup
+
+
+## Technologies
+
+- Go (net/http, Gorilla Mux), pgx (Postgres)
+- WebSockets for real‑time messaging
+- Docker‑friendly layout (single binary)
+
+
+## Run locally
+
+Prereqs: Go 1.23+; Postgres optional (in‑memory if `DATABASE_URL` is unset)
+
+1) Build and run
 
 ```powershell
-# Clone this repo
-git clone https://github.com/yourusername/chat-server.git
-cd chat-server
-
-# Copy the sample .env (optional)
-cp .env.example .env
-# Edit .env for your DB credentials:
-# DATABASE_URL=postgres://user:pass@localhost:5432/chatdb?sslmode=disable
-
-# Install dependencies & build
+# From this folder
 go mod tidy
 go build -o chat-server.exe .
-
-# Run the server
-.\\chat-server.exe
+./chat-server.exe
 ```
 
-Then open your browser at `http://localhost:8080/client.html` and join a room:
+2) Configure (optional)
 
-- Enter **username** & **room**
-- Chat away! 🎉
+If you want Postgres persistence, set the following env vars (or a `.env` if you use `godotenv`):
 
----
+```powershell
+$env:DATABASE_URL = "postgres://user:pass@localhost:5432/chatdb?sslmode=disable"
+$env:PORT = "8080"
+```
 
-## 🔧 Configuration Options
+3) Verify
 
-| Setting           | Default                             | Description                            |
-|-------------------|-------------------------------------|----------------------------------------|
-| `DATABASE_URL`    | (unset)                             | PostgreSQL connection string           |
-| In-Memory Mode    | if `DATABASE_URL` unset             | Messages stored only in memory         |
-| `PORT`            | `8080`                              | HTTP/WebSocket listen port             |
+- Open http://localhost:8080/client.html
+- Join a room, send messages, and open a second tab to see broadcasts
 
----
 
-## 🚩 Endpoints
+## Endpoints
 
-- **WebSocket**: `ws://localhost:8080/chat?r=<room>&u=<user>`
-- **History API**: `GET /history?r=<room>` (JSON array of messages)
-- **Static Client**: `GET /client.html`
+- WebSocket: `ws://localhost:8080/chat?r=<room>&u=<user>`
+- History API: `GET /history?r=<room>` (JSON array of messages)
+- Static Client: `GET /client.html`
 
----
 
-## 🦄 Contributors & Credits
+## Configuration
+
+| Setting        | Default                 | Description                          |
+|----------------|-------------------------|--------------------------------------|
+| `DATABASE_URL` | (unset)                 | PostgreSQL connection string         |
+| `PORT`         | `8080`                  | HTTP/WebSocket listen port           |
+| In‑Memory      | if `DATABASE_URL` unset | Messages stored only in memory       |
+
+
+## Folder map
+
+- `client.html`: Minimal browser client
+- `main.go`: Program entrypoint and wiring
+- `server/`: HTTP router and WebSocket handler
+- `chat/`: Hub, room, and client types
+- `model/`: Message model(s)
+- `storage/`: Repositories (Postgres + in‑memory)
+- `utils/`: Query builder
+
+
+## Notable implementation details
+
+- Hub coordinates room membership and broadcasts; workers persist messages without blocking writes
+- Postgres repository uses parameterized queries via the Query Builder
+- If `DATABASE_URL` is not provided, storage falls back to an in‑memory repository for ultra‑low latency
+
+
+## Next steps (ideas)
+
+- Add auth and per‑room ACLs
+- Add message pagination and retention policies
+- Add metrics (connections per room, broadcast latency) and tracing
+- Add Dockerfile and compose for easy Postgres spins
+
+
+## Contributors & Credits
 
 Author: IAmSotiris.
+
+````
 
 

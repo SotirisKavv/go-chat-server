@@ -146,7 +146,6 @@ $env:PORT = "8080"
 ## Contributors & Credits
 
 Author: IAmSotiris.
-
 ````
 
 
